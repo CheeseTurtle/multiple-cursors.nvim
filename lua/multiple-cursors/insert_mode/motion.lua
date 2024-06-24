@@ -10,36 +10,36 @@ local function normal_command_and_feedkeys(cmd, key)
   common.feedkeys(nil, 0, key, nil)
 end
 
-function M.up()
-  normal_command_and_feedkeys("k", "<Up>")
+function M.up(cmd,key)
+  normal_command_and_feedkeys(cmd or "k", key or "<Up>")
 end
 
-function M.down()
-  normal_command_and_feedkeys("j", "<Down>")
+function M.down(cmd,key)
+  normal_command_and_feedkeys(cmd or "j", key or "<Down>")
 end
 
-function M.left()
-  normal_command_and_feedkeys("h", "<Left>")
+function M.left(cmd,key)
+  normal_command_and_feedkeys(cmd or "h", key or "<Left>")
 end
 
-function M.right()
-  normal_command_and_feedkeys("l", "<Right>")
+function M.right(cmd,key)
+  normal_command_and_feedkeys(cmd or "l", key or "<Right>")
 end
 
-function M.home()
-  normal_command_and_feedkeys("0", "<Home>")
+function M.home(cmd,key)
+  normal_command_and_feedkeys(cmd or "0", key or "<Home>")
 end
 
-function M.eol()
-  normal_command_and_feedkeys("$", "<End>")
+function M.eol(cmd,key)
+  normal_command_and_feedkeys(cmd or "$", key or "<End>")
 end
 
-function M.word_left()
-  normal_command_and_feedkeys("b", "<C-Left>")
+function M.word_left(cmd,key)
+  normal_command_and_feedkeys(cmd or "b", key or "<C-Left>")
 end
 
-function M.word_right()
-  normal_command_and_feedkeys("w", "<C-Right>")
+function M.word_right(cmd,key)
+  normal_command_and_feedkeys(cmd or "w", key or "<C-Right>")
 end
 
 return M

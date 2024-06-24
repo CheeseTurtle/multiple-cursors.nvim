@@ -13,37 +13,36 @@ local count = nil
 -- For c command
 local c_motion_cmd = nil
 
-
 local function _a()
   -- Shift cursors right
-  virtual_cursors.move_with_normal_command(0, "l")
+  -- TODO: handle revert?
+  virtual_cursors.move_with_normal_command(0, "l", false)
 end
 
 local function _A()
   -- Cursors to end of line
-  virtual_cursors.move_with_normal_command(0, "$")
+  virtual_cursors.move_with_normal_command(0, "$", false)
 end
 
+---@return (boolean|integer)? revert
 local function _i()
   -- curswant is lost
-  virtual_cursors.visit_all(function(vc)
-    vc.curswant = vc.col
-  end)
+  virtual_cursors.visit_all(function(vc) vc.curswant = vc.col end, false)
 end
 
 local function _I()
   -- Cursor to start of line
-  virtual_cursors.move_with_normal_command(0, "^")
+  virtual_cursors.move_with_normal_command(0, "^", false)
 end
 
 local function _o()
   -- New line after current line
-  virtual_cursors.move_with_normal_command(0, "$")
+  virtual_cursors.move_with_normal_command(0, "$", false)
   insert_mode_nonprinting.all_virtual_cursors_carriage_return()
 end
 
+---@return (boolean|integer)? revert
 local function _O()
-
   -- New line before current line
   virtual_cursors.visit_all(function(vc)
     if vc.lnum == 1 then -- First line, move to start of line
@@ -54,10 +53,10 @@ local function _O()
       vc.col = common.get_col(vc.lnum, vim.v.maxcol)
       vc.curswant = vim.v.maxcol
     end
-  end)
+  end, false)
 
   -- Carriage return
-  virtual_cursors.edit_with_cursor_no_save(function(vc)
+  return virtual_cursors.edit_with_cursor_no_save(function(vc)
     -- If first line and first character
     if vc.lnum == 1 and vc.col == 1 then
       insert_mode_nonprinting.virtual_cursor_carriage_return(vc)
@@ -65,14 +64,11 @@ local function _O()
     else
       insert_mode_nonprinting.virtual_cursor_carriage_return(vc)
     end
-  end)
-
+  end, false)
 end
 
 local function _v()
-
-  virtual_cursors.visit_all(function(vc)
-
+  return virtual_cursors.visit_all(function(vc)
     -- Save cursor position as visual area start
     vc.visual_start_lnum = vc.lnum
     vc.visual_start_col = vc.col
@@ -82,9 +78,7 @@ local function _v()
       vc.col = common.get_col(vc.lnum, vc.col + count)
       vc.curswant = vc.col
     end
-
-  end)
-
+  end, false)
 end
 
 local up_down_motions = {
@@ -95,27 +89,20 @@ local up_down_motions = {
 }
 
 local function open_new_line_above(actual_motion_cmd, num_register_lines)
-
   if actual_motion_cmd == "_" then
     common.normal_bang(nil, 0, "O", nil)
     return
   end
 
   -- If it's an up/down motion and more than one line has been deleted
-  if up_down_motions[actual_motion_cmd] and num_register_lines > 1 then
-    common.normal_bang(nil, 0, "O", nil)
-  end
-
+  if up_down_motions[actual_motion_cmd] and num_register_lines > 1 then common.normal_bang(nil, 0, "O", nil) end
 end
 
 local function _c()
-
   local actual_motion_cmd = c_motion_cmd:sub(#c_motion_cmd, #c_motion_cmd)
   local motion_cmd_count = ""
 
-  if #c_motion_cmd > 1 then
-    motion_cmd_count = c_motion_cmd:sub(1, #c_motion_cmd - 1)
-  end
+  if #c_motion_cmd > 1 then motion_cmd_count = c_motion_cmd:sub(1, #c_motion_cmd - 1) end
 
   -- For _ command
   if actual_motion_cmd == "_" then
@@ -124,7 +111,7 @@ local function _c()
       c_motion_cmd = "_" -- Clear the count in the motion command
     end
     -- The delete command needs to be at least 1
-    count = vim.fn.max({1, count})
+    count = vim.fn.max({ 1, count })
   end
 
   local register = vim.v.register
@@ -141,15 +128,13 @@ local function _c()
     common.normal_bang(register, count, "d", c_motion_cmd)
     local num_register_lines = vc:save_register(register)
     open_new_line_above(actual_motion_cmd, num_register_lines)
-  end)
+  end, false)
 
   c_motion_cmd = nil
-
 end
 
 -- ToDo fix auto indent?
 local function _cc()
-
   local register = vim.v.register
 
   -- Virtual cursors
@@ -161,11 +146,9 @@ local function _cc()
   -- Real cursor
   common.normal_bang(register, count, "dd", nil)
   common.normal_bang(nil, 0, "O", nil)
-
 end
 
 local function _C()
-
   local register = vim.v.register
 
   -- Real cursor
@@ -190,11 +173,9 @@ local function _C()
     end
     vc:save_register(register)
   end)
-
 end
 
 local function _s()
-
   local register = vim.v.register
 
   -- Virtual cursors
@@ -205,34 +186,42 @@ local function _s()
   vim.wo.ve = "onemore"
   common.normal_bang(register, count, "dl", nil)
   vim.wo.ve = ve
-
 end
 
 -- Callback for the mode changed event
 function M.mode_changed()
-
   -- Move the cursor after the mode has changed
   if mode_cmd == nil then
     return
   -- Normal to insert mode
-  elseif mode_cmd == "a" then _a()
-  elseif mode_cmd == "A" then _A()
-  elseif mode_cmd == "i" then _i()
-  elseif mode_cmd == "I" then _I()
-  elseif mode_cmd == "o" then _o()
-  elseif mode_cmd == "O" then _O()
+  elseif mode_cmd == "a" then
+    _a()
+  elseif mode_cmd == "A" then
+    _A()
+  elseif mode_cmd == "i" then
+    _i()
+  elseif mode_cmd == "I" then
+    _I()
+  elseif mode_cmd == "o" then
+    _o()
+  elseif mode_cmd == "O" then
+    _O()
   -- Normal to visual
-  elseif mode_cmd == "v" then _v()
+  elseif mode_cmd == "v" then
+    _v()
   -- Normal change commands
-  elseif mode_cmd == "c" then _c()
-  elseif mode_cmd == "cc" then _cc()
-  elseif mode_cmd == "C" then _C()
-  elseif mode_cmd == "s" then _s()
+  elseif mode_cmd == "c" then
+    _c()
+  elseif mode_cmd == "cc" then
+    _cc()
+  elseif mode_cmd == "C" then
+    _C()
+  elseif mode_cmd == "s" then
+    _s()
   end
 
   count = nil
   mode_cmd = nil
-
 end
 
 function M.a()
@@ -272,7 +261,6 @@ function M.v()
 end
 
 function M.c()
-
   count = vim.v.count
   c_motion_cmd = input.get_motion_cmd()
 
@@ -282,7 +270,6 @@ function M.c()
     mode_cmd = "c"
     common.feedkeys(nil, 0, "i", nil)
   end
-
 end
 
 function M.cc()

@@ -12,11 +12,11 @@ local function normal_mode_delete_yank_and_feedkeys(cmd)
   common.feedkeys(register, count, cmd, nil)
 end
 
-function M.x() normal_mode_delete_yank_and_feedkeys("x") end
-function M.X() normal_mode_delete_yank_and_feedkeys("X") end
-function M.dd() normal_mode_delete_yank_and_feedkeys("dd") end
-function M.D() normal_mode_delete_yank_and_feedkeys("D") end
-function M.yy() normal_mode_delete_yank_and_feedkeys("yy") end
+function M.x(key) normal_mode_delete_yank_and_feedkeys(key or "x") end
+function M.X(key) normal_mode_delete_yank_and_feedkeys(key or "X") end
+function M.dd(key) normal_mode_delete_yank_and_feedkeys(key or "dd") end
+function M.D(key) normal_mode_delete_yank_and_feedkeys(key or "D") end
+function M.yy(key) normal_mode_delete_yank_and_feedkeys(key or "yy") end
 
 -- For d and y
 local function normal_mode_delete_yank_and_feedkeys_with_motion(cmd)
@@ -33,8 +33,8 @@ local function normal_mode_delete_yank_and_feedkeys_with_motion(cmd)
 
 end
 
-function M.d() normal_mode_delete_yank_and_feedkeys_with_motion("d") end
-function M.y() normal_mode_delete_yank_and_feedkeys_with_motion("y") end
+function M.d(key) normal_mode_delete_yank_and_feedkeys_with_motion(key or "d") end
+function M.y(key) normal_mode_delete_yank_and_feedkeys_with_motion(key or "y") end
 
 -- Put
 local function normal_mode_put_and_feedkeys(cmd)
@@ -44,7 +44,7 @@ local function normal_mode_put_and_feedkeys(cmd)
   common.feedkeys(register, count, cmd, nil)
 end
 
-function M.p() normal_mode_put_and_feedkeys("p") end
-function M.P() normal_mode_put_and_feedkeys("P") end
+function M.p(key) normal_mode_put_and_feedkeys(key or "p") end
+function M.P(key) normal_mode_put_and_feedkeys(key or "P") end
 
 return M

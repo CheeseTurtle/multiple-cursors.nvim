@@ -5,9 +5,7 @@ local virtual_cursors = require("multiple-cursors.virtual_cursors")
 
 -- Normal mode backspace command for a virtual cursor
 local function backspace_one_virtual_cursor(vc, count1)
-
   while count1 > 0 do
-
     -- No line change
     if vc.col > count1 then
       vc.col = vc.col - count1
@@ -28,24 +26,20 @@ local function backspace_one_virtual_cursor(vc, count1)
   end
 
   vc.curswant = vc.col
-
 end
 
 -- Normal mode backspace command for all virtual cursors
+---@return (boolean|integer)? revert
 local function backspace_all_virtual_cursors(count)
-  local count1 = vim.fn.max({count, 1})
+  local count1 = vim.fn.max({ count, 1 })
 
-  virtual_cursors.visit_all(function(vc)
-    backspace_one_virtual_cursor(vc, count1)
-  end)
-
+  return virtual_cursors.visit_all(function(vc) backspace_one_virtual_cursor(vc, count1) end)
 end
 
 -- Backspace
-function M.bs()
+function M.bs(key)
   local count = vim.v.count
-  backspace_all_virtual_cursors(count)
-  common.feedkeys(nil, count, "<BS>", nil)
+  if not backspace_all_virtual_cursors(count) then common.feedkeys(nil, count, key or "<BS>", nil) end
 end
 
 return M

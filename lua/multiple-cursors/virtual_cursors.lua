@@ -2,10 +2,12 @@ local M = {}
 
 local common = require("multiple-cursors.common")
 local extmarks = require("multiple-cursors.extmarks")
+local behavior = require "multiple-cursors.behavior"
 
 local VirtualCursor = require("multiple-cursors.virtual_cursor")
 
--- A table of the virtual cursors
+--- A table of the virtual cursors
+---@type VirtualCursor[]
 local virtual_cursors = {}
 
 local next_seq = 1
@@ -26,90 +28,73 @@ local function clean_up()
   end
 end
 
--- Check for and solve any collisions between virtual cursors
--- The virtual cursor with the higher mark ID is removed
+--- Check for and solve any collisions between virtual cursors
+--- The virtual cursor with the higher mark ID is removed
+---@return nil
 local function check_for_collisions()
-
-  if #virtual_cursors < 2 then
-    return
-  end
+  if #virtual_cursors < 2 then return end
 
   for idx1 = 1, #virtual_cursors - 1 do
     for idx2 = idx1 + 1, #virtual_cursors do
-      if virtual_cursors[idx1] == virtual_cursors[idx2] then
-        virtual_cursors[idx2].delete = true
-      end
+      if virtual_cursors[idx1] == virtual_cursors[idx2] then virtual_cursors[idx2].delete = true end
     end
   end
 
   clean_up()
-
 end
 
--- Get the number of virtual cursors
-function M.get_num_virtual_cursors()
-  return #virtual_cursors
-end
+--- Get the number of virtual cursors
+---@return integer
+function M.get_num_virtual_cursors() return #virtual_cursors end
 
--- Sort virtual cursors by position
-function M.sort()
-  table.sort(virtual_cursors)
-end
+--- Sort virtual cursors by position
+function M.sort() table.sort(virtual_cursors) end
 
--- Add a new virtual cursor with a visual area
--- add_seq indicates that a sequence number should be added to store the order that cursors have being added
-function M.add_with_visual_area(lnum, col, curswant, visual_start_lnum, visual_start_col, add_seq)
-
+--- Add a new virtual cursor with a visual area
+--- add_seq indicates that a sequence number should be added to store the order that cursors have being added
+---@param lnum integer
+---@param col integer
+---@param curswant integer
+---@param visual_start_lnum integer
+---@param visual_start_col integer
+---@param add_seq boolean
+---@param off? integer
+function M.add_with_visual_area(lnum, col, curswant, visual_start_lnum, visual_start_col, add_seq, off)
   -- Check for existing virtual cursor
   for _, vc in ipairs(virtual_cursors) do
-    if vc.col == col and vc.lnum == lnum then
-      return
-    end
+    if vc.col == col and vc.lnum == lnum then return end
   end
 
   local first = set_first and #virtual_cursors == 0
 
-  local seq = 0  -- 0 is ignored for restoring position
+  local seq = 0 -- 0 is ignored for restoring position
 
   if add_seq then
     seq = next_seq
     next_seq = next_seq + 1
   end
 
-  table.insert(virtual_cursors,
-               VirtualCursor.new(lnum, col, curswant, visual_start_lnum, visual_start_col, seq))
+  table.insert(virtual_cursors, VirtualCursor.new(lnum, col, curswant, visual_start_lnum, visual_start_col, seq))
 
   -- Create an extmark
   extmarks.update_virtual_cursor_extmarks(virtual_cursors[#virtual_cursors])
-
 end
 
--- Add a new virtual cursor
--- add_seq indicates that a sequence number should be added to store the order that cursors have being added
-function M.add(lnum, col, curswant, add_seq)
-  M.add_with_visual_area(lnum, col, curswant, 0, 0, add_seq)
-end
-
-function M.remove_by_lnum(lnum)
-
-  local delete = false
-
-  for _, vc in ipairs(virtual_cursors) do
-    if vc.lnum == lnum then
-      vc.delete = true
-      delete = true
-    end
-  end
-
-  if delete then
-    clean_up()
-  end
-
-end
+--- Add a new virtual cursor
+--- add_seq indicates that a sequence number should be added to store the order that cursors have being added
+---@param lnum integer
+---@param col integer
+---@param curswant integer
+---@param add_seq boolean
+---@param off? integer
+function M.add(lnum, col, curswant, add_seq, off) M.add_with_visual_area(lnum, col, curswant, 0, 0, add_seq, off) end
 
 -- Add a new virtual cursor, or delete if there's already an existing virtual
 -- cursor
-function M.add_or_delete(lnum, col)
+---@param lnum integer
+---@param col integer
+---@param ve? boolean
+function M.add_or_delete(lnum, col, ve)
   -- Find any existing virtual cursor
   local delete = false
 
@@ -129,12 +114,13 @@ end
 
 -- Get the position that the real cursor should take on exit, i.e. the position
 -- of the virtual cursor with the lowest non-zero seq
+---@return nil | { [0]: integer, [1]: integer, [2]: integer, [3]: integer } # { lnum, col, curswant, offset }
 function M.get_exit_pos()
-
   local seq = 999999
   local lnum = 0
   local col = 0
   local curswant = 0
+  local offset = 0
 
   for _, vc in ipairs(virtual_cursors) do
     if vc.seq ~= 0 and vc.seq < seq then
@@ -142,15 +128,15 @@ function M.get_exit_pos()
       lnum = vc.lnum
       col = vc.col
       curswant = vc.curswant
+      offset = vc.off
     end
   end
 
   if seq ~= 999999 then
-    return {lnum, col, curswant}
+    return { lnum, col, curswant, offset }
   else
     return nil
   end
-
 end
 
 -- Clear all virtual cursors
@@ -168,19 +154,18 @@ end
 
 function M.set_ignore_cursor_movement(_ignore_cursor_movement)
   ignore_cursor_movement = _ignore_cursor_movement
+  if not _ignore_cursor_movement then M.last_cursor_pos = vim.fn.getcurpos() end
 end
 
 -- Callback for the CursorMoved event
 -- Set editable to false for any virtual cursors that collide with the real
 -- cursor
+---@return nil
 function M.cursor_moved()
-
-  if ignore_cursor_movement then
-    return
-  end
+  if ignore_cursor_movement then return end
 
   -- Get real cursor position
-  local pos = vim.fn.getcurpos() -- [0, lnum, col, off, curswant]
+  local pos = vim.fn.getcurpos() -- [0, lnum, col, off, curswant, offset]
 
   for idx = #virtual_cursors, 1, -1 do
     local vc = virtual_cursors[idx]
@@ -195,161 +180,241 @@ function M.cursor_moved()
     -- Update the extmark (extmark is invisible if editable == false)
     extmarks.update_virtual_cursor_extmarks(vc)
   end
+  M.last_cursor_pos = vim.fn.getcurpos()
 end
 
-function M.toggle_lock()
-  locked = not locked
-end
-
+function M.toggle_lock() locked = not locked end
 
 -- Visitors --------------------------------------------------------------------
 
--- Visit all virtual cursors
-function M.visit_all(func)
+---@param idx integer
+---@param vc VirtualCursor
+local function revert_virtual_cursor(idx, vc)
+  -- TODO: REVERT VIRTUAL CURSORS
+end
 
-  if locked then
-    return
-  end
+-- Visit all virtual cursors
+---@param func fun(vc: VirtualCursor, idx: integer): boolean?
+---@param allow_abort? boolean
+---@param prev_cursor_pos? pos5_1
+---@return (integer|boolean)? revert # last changed index, or true
+function M.visit_all(func, allow_abort, prev_cursor_pos)
+  if locked then return end
 
   -- Save cursor position
   -- This is because changing virtualedit causes curswant to be reset
   local cursor_pos = vim.fn.getcurpos()
 
   -- Save virtualedit
-  local ve = vim.wo.ve
+  local ve, last_changed_idx = vim.wo.ve, nil
 
   -- Set virtualedit to onemore in insert or replace modes
-  if common.is_mode_insert_replace() then
-    vim.wo.ve = "onemore"
+  if behavior.need_virtual_edit then
+    vim.wo.ve = "all"
+  elseif vim.wo.ve ~= "all" and common.is_mode_insert_replace() then
+    if vim.wo.ve and #vim.wo.ve > 0 then
+      if vim.wo.ve[#vim.wo.ve] == "," then
+        vim.wo.ve = vim.wo.ve .. "onemore"
+      else
+        vim.wo.ve = vim.wo.ve .. ",onemore"
+      end
+    else
+      vim.wo.ve = "onemore"
+    end
+    print("old ve, new ve:", ve, vim.wo.ve)
   end
 
-  for idx, vc in ipairs(virtual_cursors) do
+  local revert = false
 
+  for idx, vc in ipairs(virtual_cursors) do
     -- Set virtual cursor position from extmark in case there were any changes
     extmarks.update_virtual_cursor_position(vc)
 
     if not vc.delete then
       -- Call the function
-      func(vc, idx)
+      local revert_ = func(vc, idx) and allow_abort
 
-      -- Update extmarks
-      extmarks.update_virtual_cursor_extmarks(vc)
+      if not (revert_ and behavior._eol_behavior.virt.stop_self) then
+        -- Update extmarks
+        extmarks.update_virtual_cursor_extmarks(vc)
+      end
+      if revert then
+        last_changed_idx = idx
+      elseif revert_ then
+        last_changed_idx = idx
+        revert = true
+        if behavior._eol_behavior.virt.stop_virt then break end
+      end
     end
-
   end
+
+  -- print("revert: ", revert)
 
   -- Revert virtualedit in insert or replace modes
   if common.is_mode_insert_replace() then
-    vim.wo.ve = ve
+    if not (behavior.config.autovirtualedit and vim.wo.ve == "all") then
+      print("Reverting virtualedit from", vim.wo.virtualedit, "back to", ve)
+      vim.wo.ve = ve
+    end
   end
 
   -- Restore cursor
-  vim.fn.cursor({cursor_pos[2], cursor_pos[3], cursor_pos[4], cursor_pos[5]})
+  if revert and behavior._eol_behavior.virt.stop_real then
+    if prev_cursor_pos then vim.fn.setpos(".", prev_cursor_pos) end
+  else
+    vim.fn.cursor({ cursor_pos[2], cursor_pos[3], cursor_pos[4], cursor_pos[5] })
+  end
 
-  clean_up()
-  check_for_collisions()
+  if revert and behavior._eol_behavior.virt.stop_virt and revert > 0 then
+    for idx, vc in ipairs(virtual_cursors) do
+      -- TODO: Error handling
+      local tf, errmsg = pcall(revert_virtual_cursor, idx, vc)
+      if not tf then vim.api.nvim_echo({ { errmsg, "ErrorMsg" } }, true, {}) end
+      if idx >= revert then break end
+    end
+  else
+    clean_up()
+    check_for_collisions()
+  end
 
+  if revert and (behavior._eol_behavior.virt.stop_real or behavior._eol_behavior.virt.stop_virt) then
+    return last_changed_idx
+  end
 end
 
 -- Visit virtual cursors within the buffer with the real cursor
-function M.visit_with_cursor(func)
-
+---@param func fun(vc: VirtualCursor, idx: integer): boolean?
+---@param allow_abort? boolean
+---@param prev_cursor_pos? pos5_1
+---@return (boolean|integer)? revert
+function M.visit_with_cursor(func, allow_abort, prev_cursor_pos)
   ignore_cursor_movement = true
 
-  M.visit_all(function(vc, idx)
+  local ret = M.visit_all(function(vc, idx)
     vc:set_cursor_position()
     func(vc, idx)
-  end)
+  end, allow_abort, prev_cursor_pos)
 
   ignore_cursor_movement = false
 
+  return ret
 end
 
 -- Visit virtual cursors and execute a normal command to move them
-function M.move_with_normal_command(count, cmd)
-
-  M.visit_with_cursor(function(vc)
-    common.normal_bang(nil, count, cmd, nil)
+---@param count? integer
+---@param cmd string # normal-mode command (executed with `:normal!`)
+---@param allow_abort? boolean
+---@param linewise? boolean
+---@param prev_cursor_pos? pos5_1
+---@return (boolean|integer)? revert
+function M.move_with_normal_command(count, cmd, allow_abort, prev_cursor_pos, linewise)
+  prev_cursor_pos = prev_cursor_pos or vim.fn.getcurpos()
+  return M.visit_with_cursor(function(vc)
+    if common.normal_bang(nil, count, cmd, nil, allow_abort, prev_cursor_pos, linewise) then return true end
     vc:save_cursor_position()
 
     -- Fix for $ not setting col correctly in insert mode even with onemore
     if common.is_mode_insert_replace() then
-      if vc.curswant == vim.v.maxcol then
-        vc.col = common.get_max_col(vc.lnum)
-      end
+      if vc.curswant == vim.v.maxcol then vc.col = common.get_max_col(vc.lnum) end
     end
-  end)
-
+  end, allow_abort, prev_cursor_pos)
 end
 
 -- Call func to perform an edit at each virtual cursor
 -- The virtual cursor position is not set after calling func
-function M.edit(func)
-
+---@param func fun(vc: VirtualCursor, idx: integer): boolean?
+---@param allow_abort? boolean
+---@param prev_cursor_pos? pos5_1
+---@return boolean reverted # true or last changed index
+function M.edit(func, allow_abort, prev_cursor_pos)
   -- Save cursor position with extmark
   ignore_cursor_movement = true
-  extmarks.save_cursor()
+  extmarks.save_cursor(prev_cursor_pos)
 
-  M.visit_all(function(vc, idx)
-    if vc.editable then
-      func(vc, idx)
-    end
-  end)
+  local revert_movement = M.visit_all(function(vc, idx)
+    if vc.editable then return func(vc, idx) end
+  end, allow_abort, prev_cursor_pos)
 
   -- Restore cursor from extmark
-  extmarks.restore_cursor()
+  extmarks.restore_cursor(behavior._eol_behavior.virt.stop_real and revert_movement or nil)
+  -- if revert_movement and behavior._eol_behavior.virt.stop_virt then
+  --   -- Need to revert the virtual cursors that have been changed
+  --   revert_movement = revert_movement == true and #virtual_cursors or revert_movement
+  --   for i = 1, revert_movement do
+  --     -- TODO: REVERT VIRTUAL CURSOR
+  --   end
+  -- end
+
   ignore_cursor_movement = false
 
+  return revert_movement and revert_movement ~= 0 or false
 end
 
 -- Call func to perform an edit at each virtual cursor using the real cursor
 -- The virtual cursor position is not set after calling func
-function M.edit_with_cursor_no_save(func)
-
-  M.edit(function(vc, idx)
+---@param func fun(vc: VirtualCursor, idx: integer): boolean?
+---@param allow_abort? boolean
+---@param prev_cursor_pos? pos5_1
+---@return boolean reverted
+function M.edit_with_cursor_no_save(func, allow_abort, prev_cursor_pos)
+  return M.edit(function(vc, idx)
     vc:set_cursor_position()
-    func(vc, idx)
-  end)
-
+    return func(vc, idx)
+  end, allow_abort, prev_cursor_pos)
 end
 
 -- Call func to perform an edit at each virtual cursor using the real cursor
-function M.edit_with_cursor(func)
-
-  M.edit_with_cursor_no_save(function(vc, idx)
-    func(vc, idx)
-    vc:save_cursor_position()
-  end)
-
+---@param func fun(vc: VirtualCursor, idx: integer): boolean?
+---@param allow_abort? boolean
+---@param prev_cursor_pos? pos5_1
+---@return boolean reverted
+function M.edit_with_cursor(func, allow_abort, prev_cursor_pos)
+  return M.edit_with_cursor_no_save(function(vc, idx)
+    if func(vc, idx) then
+      return true
+    else
+      vc:save_cursor_position()
+    end
+  end, allow_abort, prev_cursor_pos)
 end
 
 -- Execute a normal command to perform an edit at each virtual cursor
 -- The virtual cursor position is set after calling func
-function M.edit_with_normal_command(count, cmd, motion_cmd)
-
-  M.edit_with_cursor(function(vc)
-    common.normal_bang(nil, count, cmd, motion_cmd)
-  end)
-
+---@param count? integer # can be 0
+---@param cmd string # normal-mode command (executed with `:normal!`)
+---@param motion_cmd? string
+---@param allow_abort? boolean
+---@param prev_cursor_pos? pos5_1
+---@return boolean reverted
+function M.edit_with_normal_command(count, cmd, motion_cmd, allow_abort, prev_cursor_pos)
+  return M.edit_with_cursor(
+    function(vc) common.normal_bang(nil, count, cmd, motion_cmd) end,
+    allow_abort,
+    prev_cursor_pos
+  )
 end
 
 -- Execute a normal command to perform a delete or yank at each virtual cursor
 -- The virtual cursor position is set after calling func
+---@param register? string
+---@param count? integer # can be 0
+---@param cmd string
+---@param motion_cmd? string
 function M.normal_mode_delete_yank(register, count, cmd, motion_cmd)
-
   -- Delete or yank command
-  M.edit_with_cursor(function(vc, idx)
+  return M.edit_with_cursor(function(vc, idx)
     common.normal_bang(register, count, cmd, motion_cmd)
     vc:save_register(register)
-  end)
-
+  end, false)
 end
 
 -- Execute a normal command to perform a put at each virtual cursor
 -- The register is first saved, the replaced by the virtual cursor register
 -- After executing the command the unnamed register is restored
+---@param register string
+---@param count? integer
+---@param cmd string
 function M.normal_mode_put(register, count, cmd)
-
   local use_own_register = true
 
   for _, vc in ipairs(virtual_cursors) do
@@ -363,13 +428,10 @@ function M.normal_mode_put(register, count, cmd)
   if not use_own_register then
     -- Return if the main register doesn't have data
     local register_info = vim.fn.getreginfo(register)
-    if next(register_info) == nil then
-      return
-    end
+    if next(register_info) == nil then return end
   end
 
   M.edit_with_cursor(function(vc, idx)
-
     local register_info = nil
 
     -- If the virtual cursor has data for the register
@@ -384,20 +446,15 @@ function M.normal_mode_put(register, count, cmd)
     common.normal_bang(register, count, cmd, nil)
 
     -- Restore the register
-    if register_info then
-      vim.fn.setreg(register, register_info)
-    end
-
-  end)
-
+    if register_info then vim.fn.setreg(register, register_info) end
+  end, false)
 end
-
 
 -- Visual mode -----------------------------------------------------------------
 
 -- Call func on the visual area of each virtual cursor
+---@param func fun(vc: VirtualCursor, idx: integer)
 function M.visual_mode(func)
-
   ignore_cursor_movement = true
 
   -- Save the visual area to extmarks
@@ -408,13 +465,13 @@ function M.visual_mode(func)
     vc:set_visual_area()
 
     -- Call func
-    func(vc, idx)
+    if func(vc, idx) then return true end
 
     -- Did func exit visual mode?
     if common.is_mode("v") then
       -- Save visual area to virtual cursor
       vc:save_visual_area()
-    else  -- Edit commands will exit visual mode
+    else -- Edit commands will exit visual mode
       -- Save cursor
       vc:save_cursor_position()
 
@@ -422,147 +479,70 @@ function M.visual_mode(func)
       vc.visual_start_lnum = 0
       vc.visual_start_col = 0
     end
-  end)
-
+  end, false)
   -- Restore the visual area from extmarks
   extmarks.restore_visual_area()
 
   ignore_cursor_movement = false
-
 end
 
+---@param register string
+---@param cmd string
 function M.visual_mode_delete_yank(register, cmd)
-
   M.visual_mode(function(vc, idx)
     common.normal_bang(register, 0, cmd, nil)
     vc:save_register(register)
   end)
-
 end
-
 
 -- Split pasting ---------------------------------------------------------------
 
 -- Does the number of lines match the number of editable cursors + 1 (for the
 -- real cursor)
+---@param num_lines integer
+---@return boolean
 function M.can_split_paste(num_lines)
   -- Get the number of editable virtual cursors
   local count = 0
 
   for _, vc in ipairs(virtual_cursors) do
-    if vc.editable then
-      count = count + 1
-    end
+    if vc.editable then count = count + 1 end
   end
 
   return count + 1 == num_lines
 end
 
--- Return the index of the virtual cursor that is positioned after the real cursor
--- Return 0 if the real cursor is after all virtual cursors
-local function get_real_cursor_index()
-
-  -- Ensure virtual_cursors is sorted
-  M.sort()
-
-  -- Position of the real cursor
-  local real_cursor_pos = vim.fn.getcurpos() -- [0, lnum, col, off, curswant]
-  local lnum = real_cursor_pos[2]
-  local col = real_cursor_pos[3]
-
-  -- Find the first virtual cursor after the real cursor
-  for idx, vc in ipairs(virtual_cursors) do
-
-    if vc.lnum > lnum then
-      return idx
-    elseif vc.lnum == lnum and vc.col > col then
-      return idx
-    end
-
-  end
-
-  -- Real cursor is after all virtual cursors
-  return 0
-
-end
-
 -- Move the line for the real cursor to the end of lines
 -- Modifies the lines variable
+---@param lines integer[]
 function M.reorder_lines_for_split_pasting(lines)
-
   -- Ensure virtual_cursors is sorted
   M.sort()
 
-  -- Index of the real cursor if it were in virtual cursors
-  local real_cursor_idx = get_real_cursor_index()
+  -- Move real cursor line to the end
+  local real_cursor_pos = vim.fn.getcurpos() -- [0, lnum, col, off, curswant]
 
-  if real_cursor_idx ~= 0 then
-    -- Move the line for the real cursor to the end
-    local real_cursor_line = table.remove(lines, real_cursor_idx)
-    table.insert(lines, real_cursor_line)
-  end
-
-end
-
--- Insert each line of from into to
-local function concatenate_regcontents(from, to)
-  for _, line in ipairs(from) do
-    table.insert(to, line)
-  end
-end
-
--- Return the names of any registers stored by the virtual cursors
-function M.get_registers()
-
-  local tmp = {}
-
-  for _, vc in ipairs(virtual_cursors) do
-    for key, value in pairs(vc.registers) do
-      tmp[key] = true
-    end
-  end
-
-  local registers = {}
-
-  for key, _ in pairs(tmp) do
-    table.insert(registers, key)
-  end
-
-  return registers
-
-end
-
--- Merge registers of all cursors
-function M.merge_register_info(register)
-
-  -- Index of the real cursor if it were in virtual cursors
-  local real_cursor_idx = get_real_cursor_index()
-
-  -- Real cursor register info
-  local register_info = vim.fn.getreginfo(register)
-
-  -- To store concatenated lines
-  local regcontents = {}
+  local cursor_line_idx = 0
 
   for idx, vc in ipairs(virtual_cursors) do
-    if real_cursor_idx == idx then
-      -- Insert the real cursor lines first
-      concatenate_regcontents(register_info.regcontents, regcontents)
+    if vc.lnum == real_cursor_pos[2] then
+      if vc.col > real_cursor_pos[3] then
+        cursor_line_idx = idx
+        break
+      end
+    else
+      if vc.lnum > real_cursor_pos[2] then
+        cursor_line_idx = idx
+        break
+      end
     end
-
-    -- Insert virtual cursor register lines
-    concatenate_regcontents(vc.registers[register].regcontents, regcontents)
   end
 
-  -- Real cursor is after all virtual cursors
-  if real_cursor_idx == 0 then
-    concatenate_regcontents(register_info.regcontents, regcontents)
+  if cursor_line_idx ~= 0 then
+    -- Move the line for the real cursor to the end
+    local real_cursor_line = table.remove(lines, cursor_line_idx)
+    table.insert(lines, real_cursor_line)
   end
-
-  -- Update register info
-  register_info.regcontents = regcontents
-  vim.fn.setreg(register, register_info)
-
 end
 
 return M
